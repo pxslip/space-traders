@@ -1,0 +1,10 @@
+{
+	"tasks": {
+		"cli": "deno run --allow-read --allow-env --allow-net cli.ts"
+	},
+	"fmt": {
+		"useTabs": true,
+		"lineWidth": 120,
+		"singleQuote": true
+	}
+}
