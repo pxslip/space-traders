@@ -1,7 +1,7 @@
 import { Command } from 'https://deno.land/x/cliffy@v0.25.7/command/mod.ts';
 import { colors } from 'https://deno.land/x/cliffy@v0.25.7/ansi/colors.ts';
 import 'https://deno.land/std@0.186.0/dotenv/load.ts';
-import { ActionHandler } from 'https://deno.land/x/cliffy@v0.25.7/command/types.ts';
+import { APIWrapper } from './sdk/index.ts';
 
 interface HttpClientOptions {
 	baseUrl?: string;
@@ -13,6 +13,8 @@ interface HttpClientFetchOptions extends RequestInit {
 	body?: BodyInit;
 }
 
+class SubCommand extends Command<{ token?: string }> {}
+
 class HttpClient {
 	#baseUrl: string;
 	#headers: Headers;
@@ -21,7 +23,15 @@ class HttpClient {
 		this.#headers = new Headers(options.headers ?? {});
 	}
 
-	fetch(path: string, options: HttpClientFetchOptions) {
+	withToken(token?: string) {
+		if (token) {
+			this.#headers.set('Authorization', `Bearer ${token}`);
+			return this;
+		}
+		throw new Error('Token must be set to perform API operations');
+	}
+
+	fetch(path: string, options: HttpClientFetchOptions = {}) {
 		let headers;
 		if (options.headers) {
 			if (!(options.headers instanceof Headers)) {
@@ -52,12 +62,7 @@ class HttpClient {
 const client = new HttpClient({ baseUrl: 'https://api.spacetraders.io/v2/' });
 const encoder = new TextEncoder();
 
-const root = new Command()
-	.name('space_traders')
-	.version('0.1.0')
-	.description('CLI for the Space Traders (spacetraders.io) API based game')
-	.globalEnv('STIO_TOKEN=<token:string>', 'The api token to use when making requests', { prefix: 'STIO' })
-	.globalOption('-t, --token [token: string]', 'The api token to use when making requests');
+const api = new APIWrapper();
 
 const register = new Command()
 	.arguments('<callsign>')
@@ -91,26 +96,32 @@ const register = new Command()
 		);
 	});
 
-const me = new Command<
-	void,
-	void,
-	void,
-	[],
-	void,
-	{
-		number: number;
-		integer: number;
-		string: string;
-		boolean: boolean;
-		file: string;
-	},
-	void,
-	undefined
->().action(({ token }) => {
-	client.fetch('my/agent', { headers: { Authorization: `Bearer ${token}` } });
-});
+const me = new SubCommand()
+	.action(async ({ token }) => {
+		const resp = await api.agents.getMyAgent();
+		console.log(resp);
+	});
 
-await root
+const location = new SubCommand()
+	.arguments('<system:string> <waypoint:string>')
+	.action(async ({ token }, system: string, waypoint: string) => {
+		const resp = await client.withToken(token).fetch(`systems/${system}/waypoints/${waypoint}`);
+		console.log(await resp.json());
+	});
+
+const currentLocation = new SubCommand()
+	.action(async ({ token }) => {
+		const me: API.Me = await (await client.withToken(token).fetch(`/my/agent`)).json();
+	});
+
+await new Command()
+	.name('space_traders')
+	.version('0.1.0')
+	.description('CLI for the Space Traders (spacetraders.io) API based game')
+	.globalEnv('STIO_TOKEN=<token:string>', 'The api token to use when making requests', { prefix: 'STIO_' })
+	.globalOption('-t, --token <token:string>', 'The api token to use when making requests')
 	.command('register', register)
+	.reset()
 	.command('me', me)
+	.command('location', location)
 	.parse(Deno.args);
